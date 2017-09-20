@@ -5,14 +5,25 @@ var log4js = require('log4js');
 
 var logger = confLog(log4js);
 
-
+var rawdataPath = '../data/rawusers.json';
 /////////////////////////////////////////////////
 // MAIN GOES BELOW /////////////////////////////
 
-searchVk(20)
+searchVk(1000,200)
 	.then(processSearchData)
 	.then(getUsersData)
-	.then(items => { console.log("ITEMS",items.map(a=>a.id))} )
+	.then(items => {
+		console.log("ITEMS", items.map(a => a.id));
+		var file = fs.readFileSync(rawdataPath);
+		if(file.length>0){
+			try{
+				var rawdata = JSON.parse(file).concat(items)
+			} catch (err) { console.log("error parsing", err); var rawdata = items }
+		}else{ var rawdata = items}
+		
+		console.log("writing",rawdata.length,"items to file");
+		fs.writeFileSync(rawdataPath,JSON.stringify(rawdata));
+	})
 	.catch(error => { console.log(error) });
 
 // MAIN ENDS ////////////////////////////////////
@@ -95,7 +106,7 @@ function getUsersData(users){
 				(err)=>{
 					console.log("FAILED TO FETCH ", idx, userid, err);
 					return new Promise((resolve, reject) => {
-						setTimeout(resolve, 1100);
+						setTimeout(resolve, 1300);
 					}).then(() => getUsersData([user]))
 						.then((data) => result.push(collectVals(user, data[0])),
 							() => console.log("error"));
@@ -118,11 +129,12 @@ function getUsersData(users){
 	return chain
 }
 
-function searchVk(count) {
+function searchVk(offset,count) {
 	// Method documentation: "https://vk.com/dev/users.search"
 	var url = "https://api.vk.com/method/users.search";
 	query = {
 		"count": count,
+		"offset":offset,
 		"sex":1,
 		"country": 1, // from russia
 		"has_photo": 1,
