@@ -9,9 +9,10 @@ var logger = confLog(log4js);
 /////////////////////////////////////////////////
 // MAIN GOES BELOW /////////////////////////////
 
-searchVk(10)
+searchVk(20)
 	.then(processSearchData)
-	.then(items => { console.log(items) })
+	.then(getUsersData)
+	.then(items => { console.log("ITEMS",items.map(a=>a.id))} )
 	.catch(error => { console.log(error) });
 
 // MAIN ENDS ////////////////////////////////////
@@ -39,9 +40,86 @@ function processSearchData(data){
 	}
 }
 
+
+function getUsersData(users){
+
+	let chain = Promise.resolve();
+
+	var infourl = "https://api.vk.com/method/users.get";
+	var photourl = "https://api.vk.com/method/photos.get";
+	var groupsurl = "https://api.vk.com/method/photos.users.getSubscriptions";
+
+	var token = loadlocaltoken();
+
+	let result = [];
+	// start making chain of requests for each element of users []
+	users.forEach(function(user,idx) {
+		let userid = user.id;
+		chain = chain
+			.then(()=>{  // Get info about user (friends count,etc)
+				query = {
+					"user_ids": userid,
+					"fields": "counters,city"
+				}	
+				// pass query data and once loaded token to request
+				return vkRequestMaker(infourl,query,token).then(
+					i=>i.response[0],
+					(err)=>{console.log(err); return {}; });
+			})
+			.then((info)=>{ // get links to user's photos
+				query={
+					"owner_id":userid,
+					"count":10,
+					"photo_sizes":0,
+					"album_id":"profile",
+					"extended":1 // will return likes and reposts
+				}	
+				return vkRequestMaker(photourl,query,token) 
+					.then(p=>{  
+						// concat data with info
+						info["photos"]=p.response.items;
+						return info;
+					},(err)=>{
+						if (!isEmpty(info) ) { // check if previous call suceeded
+							return info;
+						} else {
+							throw new Error(err);
+						}
+					});
+			})
+				// concat with user and push results 
+			.then(data=>{
+				result.push(collectVals(user,data));
+				 console.log("finished with ",idx,userid)
+				},
+				(err)=>{
+					console.log("FAILED TO FETCH ", idx, userid, err);
+					return new Promise((resolve, reject) => {
+						setTimeout(resolve, 1100);
+					}).then(() => getUsersData([user]))
+						.then((data) => result.push(collectVals(user, data[0])),
+							() => console.log("error"));
+
+					//result.push(user);
+				}
+		)/*.then(() => {
+			return new Promise((resolve,reject)=>{
+				setTimeout(resolve, 400);
+			})}
+		)*/
+	});
+
+	chain = chain.then(() => {
+		if (result.length === 0) {
+			throw new Error("Nothing fetched at all");
+		}
+		return result;
+	});
+	return chain
+}
+
 function searchVk(count) {
 	// Method documentation: "https://vk.com/dev/users.search"
-
 	var url = "https://api.vk.com/method/users.search";
 	query = {
 		"count": count,
@@ -50,20 +128,27 @@ function searchVk(count) {
 		"has_photo": 1,
 		"fields": "connections"// get links to instagram ,skype...
 	};
-	var token = loadlocaltoken(); // load API token from filesystem
-	query.access_token = token;
+	return vkRequestMaker(url,query).then(u=>u.response.items);
+};
+
+// Function that handles http and loads token to query
+function vkRequestMaker(url,query,token){
+	if(token==null){
+		var token = loadlocaltoken(); // load API token from filesystem
+	}
+	query["access_token"]=token;
 	query.v = "5.68"
 	return new Promise((resolve, reject) => {
 		// Make an http to search api
 		request({ url: url, qs: query }, function (err, res, body) {
-		//	console.log("Search returned:",body);
+			//console.log("req returned:",body," url:",url);
 			if (err) { reject(err); }
 			else {
 				// parse response
 				var answ = JSON.parse(body);
 				if (answ.error == null) {
 					// if request succesfull, resolve promice with _items_ of search
-					resolve(answ.response.items);
+					resolve(answ);
 				} else {
 					// if Vk api returned an error, reject promice
 					reject(answ.error);
@@ -72,7 +157,12 @@ function searchVk(count) {
 		});
 	});
 }
-
+function collectVals(o1, o2) {
+ for (var key in o2) {
+  o1[key] = o2[key];
+ }
+ return o1;
+}
 
 function confLog(log4js) {
 	log4js.clearAppenders();
@@ -82,4 +172,31 @@ function confLog(log4js) {
 
 function loadlocaltoken() {
 	return fs.readFileSync('.vktoken').slice(0, -1).toString();
+}
+
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function isEmpty(obj) {
+
+    // null and undefined are "empty"
+    if (obj == null) return true;
+
+    // Assume if it has a length property with a non-zero value
+    // that that property is correct.
+    if (obj.length > 0)    return false;
+    if (obj.length === 0)  return true;
+
+    // If it isn't an object at this point
+    // it is empty, but it can't be anything *but* empty
+    // Is it empty?  Depends on your application.
+    if (typeof obj !== "object") return true;
+
+    // Otherwise, does it have any properties of its own?
+    // Note that this doesn't handle
+    // toString and valueOf enumeration bugs in IE < 9
+    for (var key in obj) {
+        if (hasOwnProperty.call(obj, key)) return false;
+    }
+
+    return true;
 }
