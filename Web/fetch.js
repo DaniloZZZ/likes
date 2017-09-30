@@ -14,15 +14,7 @@ searchVk(1000,200)
 	.then(getUsersData)
 	.then(items => {
 		console.log("ITEMS", items.map(a => a.id));
-		var file = fs.readFileSync(rawdataPath);
-		if(file.length>0){
-			try{
-				var rawdata = JSON.parse(file).concat(items)
-			} catch (err) { console.log("error parsing", err); var rawdata = items }
-		}else{ var rawdata = items}
-		
-		console.log("writing",rawdata.length,"items to file");
-		fs.writeFileSync(rawdataPath,JSON.stringify(rawdata));
+		appendRawData(items);
 	})
 	.catch(error => { console.log(error) });
 
@@ -174,6 +166,19 @@ function collectVals(o1, o2) {
   o1[key] = o2[key];
  }
  return o1;
+}
+function appendRawData(items){
+	// Read data that already written
+	var file = fs.readFileSync(rawdataPath);
+	if (file.length > 0) { // if empty
+		try {
+			// try parse file and append items
+			var rawdata = JSON.parse(file).concat(items)
+		} catch (err) { console.log("error parsing", err); var rawdata = items }
+	} else { var rawdata = items }
+	// write data to file
+	console.log("writing", rawdata.length, "items to file");
+	fs.writeFileSync(rawdataPath, JSON.stringify(rawdata));
 }
 
 function confLog(log4js) {
